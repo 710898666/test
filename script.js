@@ -5,6 +5,7 @@ const statusHintEl = document.querySelector("#status-hint");
 const addBlockBtn = document.querySelector("#add-block-btn");
 const addPortBtn = document.querySelector("#add-port-btn");
 const toggleConnectBtn = document.querySelector("#toggle-connect-btn");
+const deleteSelectedBtn = document.querySelector("#delete-selected-btn");
 
 const colors = ["#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#fb7185", "#60a5fa"];
 
@@ -35,18 +36,9 @@ const findPortById = (id) => {
 const findBusById = (id) => state.buses.find((bus) => bus.id === id);
 
 const normalizePinConnections = (bus) => {
-  const usedSourcePins = new Set();
   const usedTargetPins = new Set();
 
   for (const net of bus.nets) {
-    if (net.fromPinId) {
-      if (usedSourcePins.has(net.fromPinId)) {
-        net.fromPinId = null;
-      } else {
-        usedSourcePins.add(net.fromPinId);
-      }
-    }
-
     if (net.toPinId) {
       if (usedTargetPins.has(net.toPinId)) {
         net.toPinId = null;
@@ -113,6 +105,43 @@ const select = (selection) => {
 };
 
 const getPortConnections = (portId) => state.buses.filter((bus) => bus.sourcePortId === portId || bus.targetPortId === portId);
+const removeBusesByPortId = (portId) => {
+  state.buses = state.buses.filter((bus) => bus.sourcePortId !== portId && bus.targetPortId !== portId);
+};
+
+const deleteSelected = () => {
+  if (!state.selected) {
+    statusHintEl.textContent = "请先选中要删除的对象。";
+    return;
+  }
+
+  if (state.selected.type === "block") {
+    const block = findBlockById(state.selected.id);
+    if (!block) {
+      return;
+    }
+
+    for (const port of block.ports) {
+      removeBusesByPortId(port.id);
+    }
+
+    state.blocks = state.blocks.filter((item) => item.id !== block.id);
+  } else if (state.selected.type === "port") {
+    const ref = findPortById(state.selected.id);
+    if (!ref) {
+      return;
+    }
+
+    ref.block.ports = ref.block.ports.filter((item) => item.id !== ref.port.id);
+    removeBusesByPortId(ref.port.id);
+  } else if (state.selected.type === "bus") {
+    state.buses = state.buses.filter((item) => item.id !== state.selected.id);
+  }
+
+  state.selected = null;
+  render();
+};
+
 
 const enterConnectMode = () => {
   state.connectMode = !state.connectMode;
@@ -155,6 +184,7 @@ const connectPorts = (sourcePortId, targetPortId) => {
       note: "",
       color: colors[state.buses.length % colors.length],
     },
+    controlOffset: 0,
     nets: [],
   };
 
@@ -295,6 +325,39 @@ const renderDiagram = () => {
         render();
       });
 
+      portEl.addEventListener("pointerdown", (event) => {
+        if (state.connectMode) {
+          return;
+        }
+
+        event.stopPropagation();
+        const startY = event.clientY;
+        const startX = event.clientX;
+        const originOffset = port.offsetY;
+        const originSide = port.side;
+
+        portEl.classList.add("dragging");
+
+        const onMove = (moveEvent) => {
+          const deltaY = moveEvent.clientY - startY;
+          const absX = block.x + (originSide === "left" ? 0 : block.width) + (moveEvent.clientX - startX);
+          const sideBreak = block.x + block.width / 2;
+
+          port.offsetY = Math.max(24, Math.min(220, originOffset + deltaY));
+          port.side = absX <= sideBreak ? "left" : "right";
+          renderDiagram();
+        };
+
+        const onUp = () => {
+          portEl.classList.remove("dragging");
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        };
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      });
+
       diagramEl.append(portEl);
 
       const label = document.createElement("div");
@@ -320,7 +383,8 @@ const renderDiagram = () => {
 
     const sourcePos = getPortPosition(sourceRef.block, sourceRef.port);
     const targetPos = getPortPosition(targetRef.block, targetRef.port);
-    const cx = (sourcePos.x + targetPos.x) / 2;
+    const cxBase = (sourcePos.x + targetPos.x) / 2;
+    const cx = cxBase + (bus.controlOffset || 0);
     const path = `M ${sourcePos.x} ${sourcePos.y} C ${cx} ${sourcePos.y}, ${cx} ${targetPos.y}, ${targetPos.x} ${targetPos.y}`;
 
     const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -339,11 +403,41 @@ const renderDiagram = () => {
     busLayerEl.append(line);
 
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    const midY = (sourcePos.y + targetPos.y) / 2;
     text.setAttribute("x", String(cx));
-    text.setAttribute("y", String((sourcePos.y + targetPos.y) / 2 - 6));
+    text.setAttribute("y", String(midY - 6));
     text.setAttribute("class", "bus-label");
     text.textContent = `${bus.name} (${bus.nets.filter((net) => net.toPinId).length}/${bus.nets.length})`;
     busLayerEl.append(text);
+
+    const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    handle.setAttribute("cx", String(cx));
+    handle.setAttribute("cy", String(midY));
+    handle.setAttribute("r", "7");
+    handle.setAttribute("class", "bus-handle");
+    handle.style.pointerEvents = "all";
+
+    handle.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      select({ type: "bus", id: bus.id });
+      const startX = event.clientX;
+      const originOffset = bus.controlOffset || 0;
+
+      const onMove = (moveEvent) => {
+        bus.controlOffset = originOffset + (moveEvent.clientX - startX);
+        renderDiagram();
+      };
+
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+
+    busLayerEl.append(handle);
   }
 };
 
@@ -368,7 +462,7 @@ const renderProperties = () => {
       <h3>Block 属性</h3>
       <div class="field"><label>名称</label><input id="block-name" value="${block.name}" /></div>
       <div class="small">位置: (${Math.round(block.x)}, ${Math.round(block.y)})</div>
-      <div class="row" style="margin-top:8px;"><button id="block-add-port">新增 Port</button></div>
+      <div class="row" style="margin-top:8px;"><button id="block-add-port">新增 Port</button><button id="block-delete" class="danger">删除 Block</button></div>
     `;
     propertyContentEl.append(box);
 
@@ -378,6 +472,10 @@ const renderProperties = () => {
     });
 
     box.querySelector("#block-add-port").addEventListener("click", () => createPort(block.id));
+    box.querySelector("#block-delete").addEventListener("click", () => {
+      select({ type: "block", id: block.id });
+      deleteSelected();
+    });
     return;
   }
 
@@ -399,6 +497,7 @@ const renderProperties = () => {
       </div>
       <div class="field"><label>Y 偏移</label><input id="port-offset" type="number" value="${ref.port.offsetY}" /></div>
       <div class="small">已连接 Bus 数量：${connectedBuses.length}</div>
+      <div class="row"><button id="port-delete" class="danger">删除 Port</button></div>
     `;
 
     propertyContentEl.append(portBox);
@@ -415,6 +514,10 @@ const renderProperties = () => {
     portBox.querySelector("#port-offset").addEventListener("change", (event) => {
       ref.port.offsetY = Number(event.target.value) || 20;
       renderDiagram();
+    });
+    portBox.querySelector("#port-delete").addEventListener("click", () => {
+      select({ type: "port", id: ref.port.id });
+      deleteSelected();
     });
 
     const pinSection = document.createElement("div");
@@ -515,7 +618,7 @@ const renderProperties = () => {
       <div class="field"><label>颜色</label><input id="bus-color" value="${bus.attrs.color}" /></div>
       <div class="field"><label>备注</label><textarea id="bus-note">${bus.attrs.note}</textarea></div>
       <div class="small">${sourceRef.block.name}.${sourceRef.port.name} ➜ ${targetRef.block.name}.${targetRef.port.name}</div>
-      <div class="row" style="margin-top:8px;"><button id="bus-auto-map">按 Pin 名自动匹配</button><button id="bus-delete" class="danger">删除 Bus</button></div>
+      <div class="row" style="margin-top:8px;"><button id="bus-auto-map">按 Pin 名自动匹配</button><button id="bus-reset-shape">重置 Bus 弯曲</button><button id="bus-delete" class="danger">删除 Bus</button></div>
     `;
     propertyContentEl.append(basic);
 
@@ -539,6 +642,10 @@ const renderProperties = () => {
     basic.querySelector("#bus-auto-map").addEventListener("click", () => {
       autoMapPins(bus.id);
       render();
+    });
+    basic.querySelector("#bus-reset-shape").addEventListener("click", () => {
+      bus.controlOffset = 0;
+      renderDiagram();
     });
     basic.querySelector("#bus-delete").addEventListener("click", () => {
       state.buses = state.buses.filter((item) => item.id !== bus.id);
@@ -610,16 +717,7 @@ const renderProperties = () => {
           renderDiagram();
         });
         sourceSelect.addEventListener("change", (event) => {
-          const nextPinId = event.target.value || null;
-          const conflict = bus.nets.find((item) => item.id !== net.id && item.fromPinId === nextPinId);
-
-          if (conflict && nextPinId) {
-            conflict.fromPinId = null;
-            statusHintEl.textContent = "已将该源 Pin 从其它 Net 挤出，并分配到当前 Net。";
-          }
-
-          net.fromPinId = nextPinId;
-          normalizePinConnections(bus);
+          net.fromPinId = event.target.value || null;
           render();
         });
         targetSelect.addEventListener("change", (event) => {
@@ -659,11 +757,10 @@ const renderProperties = () => {
     addNetBtn.textContent = "新增 Net";
     addNetBtn.style.marginTop = "8px";
     addNetBtn.addEventListener("click", () => {
-      const sourcePin = sourceRef.port.pins.find((pin) => !bus.nets.some((net) => net.fromPinId === pin.id));
       bus.nets.push({
         id: uid("net"),
         name: `net_${bus.nets.length}`,
-        fromPinId: sourcePin ? sourcePin.id : sourceRef.port.pins[0]?.id ?? null,
+        fromPinId: sourceRef.port.pins[0]?.id ?? null,
         toPinId: null,
         attrs: { width: "1", type: "data", note: "" },
       });
@@ -724,6 +821,13 @@ addPortBtn.addEventListener("click", () => {
   statusHintEl.textContent = "请先选中一个 Block，再新增 Port。";
 });
 toggleConnectBtn.addEventListener("click", enterConnectMode);
+deleteSelectedBtn.addEventListener("click", deleteSelected);
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Delete") {
+    deleteSelected();
+  }
+});
 
 createDefaultBlock();
 createDefaultBlock();
