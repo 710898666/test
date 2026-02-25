@@ -614,9 +614,8 @@ const renderProperties = () => {
           const conflict = bus.nets.find((item) => item.id !== net.id && item.fromPinId === nextPinId);
 
           if (conflict && nextPinId) {
-            statusHintEl.textContent = "一个源 Pin 只能映射到一条 Net，请先取消已有连接。";
-            sourceSelect.value = net.fromPinId || "";
-            return;
+            conflict.fromPinId = null;
+            statusHintEl.textContent = "已将该源 Pin 从其它 Net 挤出，并分配到当前 Net。";
           }
 
           net.fromPinId = nextPinId;
@@ -628,9 +627,8 @@ const renderProperties = () => {
           const conflict = bus.nets.find((item) => item.id !== net.id && item.toPinId === nextPinId);
 
           if (conflict && nextPinId) {
-            statusHintEl.textContent = "一个目标 Pin 只能被连接一次，请先取消已有连接。";
-            targetSelect.value = net.toPinId || "";
-            return;
+            conflict.toPinId = null;
+            statusHintEl.textContent = "已将该目标 Pin 从其它 Net 挤出，并分配到当前 Net。";
           }
 
           net.toPinId = nextPinId;
