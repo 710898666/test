@@ -67,7 +67,7 @@ button.danger {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) minmax(460px, 42vw);
   gap: 12px;
   padding: 12px;
 }
@@ -181,6 +181,10 @@ button.danger {
   overflow: auto;
 }
 
+.property-content {
+  min-width: 0;
+}
+
 .property-panel h2 {
   margin: 0 0 10px;
   font-size: 1rem;
@@ -225,6 +229,10 @@ textarea {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+}
+
+.section:has(.net-table) {
+  overflow-x: auto;
 }
 
 .net-table th,

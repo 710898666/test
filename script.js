@@ -34,6 +34,29 @@ const findPortById = (id) => {
 
 const findBusById = (id) => state.buses.find((bus) => bus.id === id);
 
+const normalizePinConnections = (bus) => {
+  const usedSourcePins = new Set();
+  const usedTargetPins = new Set();
+
+  for (const net of bus.nets) {
+    if (net.fromPinId) {
+      if (usedSourcePins.has(net.fromPinId)) {
+        net.fromPinId = null;
+      } else {
+        usedSourcePins.add(net.fromPinId);
+      }
+    }
+
+    if (net.toPinId) {
+      if (usedTargetPins.has(net.toPinId)) {
+        net.toPinId = null;
+      } else {
+        usedTargetPins.add(net.toPinId);
+      }
+    }
+  }
+};
+
 const getPortPosition = (block, port) => {
   const y = block.y + port.offsetY;
 
@@ -170,9 +193,10 @@ const autoMapPins = (busId) => {
       },
     };
   });
+
+  normalizePinConnections(bus);
 };
 
-const buildPinNameMap = (port) => new Map(port.pins.map((pin) => [pin.id, pin.name]));
 
 const getConnectionStats = (bus) => {
   const sourceRef = findPortById(bus.sourcePortId);
@@ -203,7 +227,7 @@ const render = () => {
 };
 
 const renderDiagram = () => {
-  diagramEl.querySelectorAll(".block").forEach((item) => item.remove());
+  diagramEl.querySelectorAll(".block, .port-chip, .port-label").forEach((item) => item.remove());
   busLayerEl.innerHTML = "";
 
   for (const block of state.blocks) {
@@ -474,9 +498,12 @@ const renderProperties = () => {
     if (!sourceRef || !targetRef) {
       return;
     }
-
-    const sourceNameMap = buildPinNameMap(sourceRef.port);
-    const targetNameMap = buildPinNameMap(targetRef.port);
+    const sourceSelectOptions = ["<option value=''>--未连接--</option>"]
+      .concat(sourceRef.port.pins.map((pin) => `<option value='${pin.id}'>${pin.name}</option>`))
+      .join("");
+    const targetSelectOptions = ["<option value=''>--未连接--</option>"]
+      .concat(targetRef.port.pins.map((pin) => `<option value='${pin.id}'>${pin.name}</option>`))
+      .join("");
 
     const basic = document.createElement("div");
     basic.className = "section";
@@ -554,14 +581,11 @@ const renderProperties = () => {
 
       for (const net of bus.nets) {
         const tr = document.createElement("tr");
-        const options = ["<option value=''>--未连接--</option>"]
-          .concat(targetRef.port.pins.map((pin) => `<option value='${pin.id}'>${pin.name}</option>`))
-          .join("");
 
         tr.innerHTML = `
           <td><input data-key="name" value="${net.name}" /></td>
-          <td>${sourceNameMap.get(net.fromPinId) || "(源 Pin 不存在)"}</td>
-          <td><select data-key="toPinId">${options}</select></td>
+          <td><select data-key="fromPinId">${sourceSelectOptions}</select></td>
+          <td><select data-key="toPinId">${targetSelectOptions}</select></td>
           <td><input data-key="width" value="${net.attrs.width}" /></td>
           <td>
             <select data-key="type">
@@ -575,7 +599,9 @@ const renderProperties = () => {
           <td><button class="danger" data-key="delete">删</button></td>
         `;
 
+        const sourceSelect = tr.querySelector('select[data-key="fromPinId"]');
         const targetSelect = tr.querySelector('select[data-key="toPinId"]');
+        sourceSelect.value = net.fromPinId || "";
         targetSelect.value = net.toPinId || "";
         tr.querySelector('select[data-key="type"]').value = net.attrs.type;
 
@@ -583,8 +609,32 @@ const renderProperties = () => {
           net.name = event.target.value;
           renderDiagram();
         });
+        sourceSelect.addEventListener("change", (event) => {
+          const nextPinId = event.target.value || null;
+          const conflict = bus.nets.find((item) => item.id !== net.id && item.fromPinId === nextPinId);
+
+          if (conflict && nextPinId) {
+            statusHintEl.textContent = "一个源 Pin 只能映射到一条 Net，请先取消已有连接。";
+            sourceSelect.value = net.fromPinId || "";
+            return;
+          }
+
+          net.fromPinId = nextPinId;
+          normalizePinConnections(bus);
+          render();
+        });
         targetSelect.addEventListener("change", (event) => {
-          net.toPinId = event.target.value || null;
+          const nextPinId = event.target.value || null;
+          const conflict = bus.nets.find((item) => item.id !== net.id && item.toPinId === nextPinId);
+
+          if (conflict && nextPinId) {
+            statusHintEl.textContent = "一个目标 Pin 只能被连接一次，请先取消已有连接。";
+            targetSelect.value = net.toPinId || "";
+            return;
+          }
+
+          net.toPinId = nextPinId;
+          normalizePinConnections(bus);
           render();
         });
         tr.querySelector('input[data-key="width"]').addEventListener("input", (event) => {
@@ -619,6 +669,7 @@ const renderProperties = () => {
         toPinId: null,
         attrs: { width: "1", type: "data", note: "" },
       });
+      normalizePinConnections(bus);
       render();
     });
 
