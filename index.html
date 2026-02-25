@@ -3,39 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>计算器</title>
+  <title>Bus 总线建模器</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="calculator" aria-label="计算器">
-    <h1>计算器</h1>
-    <input id="display" class="display" type="text" value="0" readonly aria-label="显示屏" />
-    <div class="keys" role="group" aria-label="按键区">
-      <button data-action="clear">C</button>
-      <button data-action="delete">⌫</button>
-      <button data-value="%">%</button>
-      <button class="operator" data-value="/">÷</button>
-
-      <button data-value="7">7</button>
-      <button data-value="8">8</button>
-      <button data-value="9">9</button>
-      <button class="operator" data-value="*">×</button>
-
-      <button data-value="4">4</button>
-      <button data-value="5">5</button>
-      <button data-value="6">6</button>
-      <button class="operator" data-value="-">−</button>
-
-      <button data-value="1">1</button>
-      <button data-value="2">2</button>
-      <button data-value="3">3</button>
-      <button class="operator" data-value="+">+</button>
-
-      <button class="zero" data-value="0">0</button>
-      <button data-value=".">.</button>
-      <button class="equals" data-action="calculate">=</button>
+  <header class="topbar">
+    <h1>框图 Bus 总线建模器</h1>
+    <div class="actions">
+      <button id="add-block-btn">新增 Block</button>
+      <button id="add-port-btn">为选中 Block 新增 Port</button>
+      <button id="toggle-connect-btn" class="accent">进入连接模式</button>
+      <button id="delete-selected-btn" class="danger">删除选中</button>
     </div>
+  </header>
+
+  <main class="workspace">
+    <section class="diagram-panel">
+      <div class="hint" id="status-hint">提示：拖动 Block 调整布局，点击元素查看属性。</div>
+      <div id="diagram" class="diagram" aria-label="框图区">
+        <svg id="bus-layer" class="bus-layer"></svg>
+      </div>
+    </section>
+
+    <aside class="property-panel" id="property-panel">
+      <h2>属性面板</h2>
+      <div id="property-content" class="property-content">请选择一个 Block / Port / Bus。</div>
+    </aside>
   </main>
+
+  <template id="pin-item-template">
+    <div class="pin-item">
+      <input class="pin-name" />
+      <button class="danger pin-delete-btn">删除</button>
+    </div>
+  </template>
 
   <script src="script.js"></script>
 </body>
